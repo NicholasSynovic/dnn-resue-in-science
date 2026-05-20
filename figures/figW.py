@@ -17,6 +17,7 @@ XY_TICK_FONT_SIZE: int = 18
 OTHER_FONT_SIZE: int = XY_TICK_FONT_SIZE
 DL_LABEL: str = "PTM Reuse"
 NO_DL_LABEL: str = "No PTM Reuse"
+FIGSIZE: tuple[float, float] = (12.8, 9.6)
 
 
 def load_dl_rows(db: Engine) -> DataFrame:
@@ -36,7 +37,9 @@ INNER JOIN
 ON
     ns.doi = udl.doi
 """
-    return pd.read_sql(sql=sql, con=db)
+    df: DataFrame = pd.read_sql(sql=sql, con=db)
+
+    return df[df["publication_year"] < 2026]
 
 
 def parse_json(value: str) -> dict[str, Any] | list[Any] | None:
@@ -136,49 +139,37 @@ def plot_counts(df: DataFrame, output_path: Path) -> None:
     blue_counts = pivot.get(DL_LABEL, zero_counts)
     red_counts = pivot.get(NO_DL_LABEL, zero_counts)
 
+    red_bars = ax.bar(
+        pivot["publication_year"],
+        red_counts,
+        color="#C44E52",
+        label=NO_DL_LABEL,
+    )
     blue_bars = ax.bar(
         pivot["publication_year"],
         blue_counts,
         color="#4C78A8",
         label=DL_LABEL,
     )
-    red_bars = ax.bar(
-        pivot["publication_year"],
-        red_counts,
-        bottom=blue_counts,
-        color="#C44E52",
-        label=NO_DL_LABEL,
-    )
+
+    print(df)
 
     ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.set_xlabel("Year", fontsize=XY_LABEL_FONT_SIZE)
     ax.set_ylabel("Count", fontsize=XY_LABEL_FONT_SIZE)
     plt.suptitle("Papers Reusing PTMs per Year", fontsize=SUPTITLE_FONT_SIZE)
     plt.title(
-        label=fill("4,662 Candidate Papers; 1,837 Reuse PTMs"),
+        label=f"{df[df['category'] == 'PTM Reuse']['count'].sum():,} Reuse PTMs; {df[df['category'] == 'No PTM Reuse']['count'].sum():,} No PTM Reuse;",
         fontsize=TITLE_FONT_SIZE,
+        loc="center",
     )
-    ax.set_xticks(years)
-    ax.set_xticklabels([str(year) for year in years], rotation=45)
+    xticks: list[int] = years[::2]
+    ax.set_xticks(xticks)
+    ax.set_xticklabels([str(year) for year in xticks], rotation=45)
     ax.tick_params(axis="both", labelsize=XY_TICK_FONT_SIZE)
     ax.legend(title="", fontsize=OTHER_FONT_SIZE)
     ax.grid(False)
     ax.set_axisbelow(True)
-
-    # ax.bar_label(blue_bars, fmt="{:,.0f}", padding=3, fontsize=OTHER_FONT_SIZE)
-    # ax.bar_label(red_bars, fmt="{:,.0f}", padding=3, fontsize=OTHER_FONT_SIZE)
-
-    # totals = blue_counts.add(red_counts)
-    # for x_value, total in zip(years, totals, strict=True):
-    #     if total > 0:
-    #         ax.text(
-    #             x_value,
-    #             total + 0.5,
-    #             f"{int(total):,}",
-    #             ha="center",
-    #             va="bottom",
-    #             fontsize=OTHER_FONT_SIZE,
-    #         )
 
     fig.tight_layout()
     fig.savefig(output_path)

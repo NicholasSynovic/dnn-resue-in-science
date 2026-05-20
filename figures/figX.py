@@ -27,6 +27,8 @@ TITLE_FONT_SIZE: int = 22
 XY_LABEL_FONT_SIZE: int = 20
 XY_TICK_FONT_SIZE: int = 18
 OTHER_FONT_SIZE: int = XY_TICK_FONT_SIZE
+FIGSIZE: tuple[float, float] = (24, 10)
+
 
 ADAPTATION_LABEL: str = "Adaptation Reuse"
 CONCEPTUAL_LABEL: str = "Conceptual Reuse"
@@ -58,7 +60,9 @@ JOIN
 ON
     oa.doi = reuse.doi;
 """
-    return pd.read_sql(sql=sql, con=db)
+    df: DataFrame = pd.read_sql(sql=sql, con=db)
+
+    return df[df["publication_year"] < 2026]
 
 
 def parse_json(value: str) -> dict[str, Any] | None:
@@ -200,7 +204,7 @@ def plot(field_dataframes: dict[str, DataFrame], output_path: Path) -> None:
         "(H)",
     ]
 
-    fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(24, 10), sharey="row")
+    fig, axes = plt.subplots(nrows=2, ncols=4, figsize=FIGSIZE, sharey="row")
     flat_axes = axes.flatten()
 
     row_max: list[int] = []
@@ -237,16 +241,40 @@ def plot(field_dataframes: dict[str, DataFrame], output_path: Path) -> None:
                 }
             )
 
-        bottom = pd.Series(0, index=panel_data.index)
-        for classification in CLASS_ORDER:
-            ax.bar(
-                panel_data["year"],
-                panel_data[classification],
-                bottom=bottom,
-                color=colors[classification],
-                label=classification,
-            )
-            bottom = bottom + panel_data[classification]
+        ax.bar(
+            panel_data["year"],
+            panel_data["Adaptation Reuse"],
+            # bottom=bottom,
+            color=colors["Adaptation Reuse"],
+            label="Adaptation Reuse",
+        )
+
+        ax.bar(
+            panel_data["year"],
+            panel_data["Deployment Reuse"],
+            # bottom=bottom,
+            color=colors["Deployment Reuse"],
+            label="Deployment Reuse",
+        )
+
+        ax.bar(
+            panel_data["year"],
+            panel_data["Conceptual Reuse"],
+            # bottom=bottom,
+            color=colors["Conceptual Reuse"],
+            label="Conceptual Reuse",
+        )
+
+        # bottom = pd.Series(0, index=panel_data.index)
+        # for classification in CLASS_ORDER:
+        #     ax.bar(
+        #         panel_data["year"],
+        #         panel_data[classification],
+        #         bottom=bottom,
+        #         color=colors[classification],
+        #         label=classification,
+        #     )
+        #     bottom = bottom + panel_data[classification]
 
         ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
         ax.set_ylim(0, row_max[row_index] * 1.3 if row_max[row_index] else 1)

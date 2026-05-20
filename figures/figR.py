@@ -30,6 +30,7 @@ XY_TICK_FONT_SIZE: int = 18
 OTHER_FONT_SIZE: int = XY_TICK_FONT_SIZE
 DL_LABEL: str = "DL Usage"
 NO_DL_LABEL: str = "No DL Usage"
+FIGSIZE: tuple[float, float] = (24, 10)
 
 
 def load_papers(db: Engine) -> DataFrame:
@@ -48,7 +49,9 @@ JOIN
 ON
     oa.doi = udl.doi;
 """
-    return pd.read_sql(sql=sql, con=db)
+    df: DataFrame = pd.read_sql(sql=sql, con=db)
+
+    return df[df["publication_year"] < 2026]
 
 
 def parse_json(value: str) -> dict[str, Any] | list[Any] | None:
@@ -141,7 +144,30 @@ def create_field_dataframes(df: DataFrame) -> dict[str, DataFrame]:
     return field_dataframes
 
 
-def plot(field_dataframes: dict[str, DataFrame], output_path: Path) -> None:
+def count_papers(df: DataFrame) -> tuple[int, int]:
+    uses_dl: int = 0
+    no_dl: int = 0
+
+    for _, row in df.iterrows():
+        parsed_response = parse_json(str(row["model_response"]))
+        if not isinstance(parsed_response, dict):
+            continue
+
+        result = parsed_response.get("result")
+        if result is True:
+            uses_dl += 1
+        else:
+            no_dl += 1
+
+    return (uses_dl, no_dl)
+
+
+def plot(
+    field_dataframes: dict[str, DataFrame],
+    uses_dl_count: int,
+    no_dl_count: int,
+    output_path: Path,
+) -> None:
     panel_labels: list[str] = [
         "(A)",
         "(B)",
@@ -156,12 +182,13 @@ def plot(field_dataframes: dict[str, DataFrame], output_path: Path) -> None:
     totals: dict[str, int] = {
         field: int(df["dl_using"].sum()) for field, df in field_dataframes.items()
     }
+
     ordered_fields = [
         field
         for field, _ in sorted(totals.items(), key=lambda item: (-item[1], item[0]))
     ]
 
-    fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(24, 10), sharey="row")
+    fig, axes = plt.subplots(nrows=2, ncols=4, figsize=FIGSIZE, sharey="row")
     flat_axes = axes.flatten()
     top_row_fields = ordered_fields[:4]
     bottom_row_fields = ordered_fields[4:]
@@ -195,7 +222,7 @@ def plot(field_dataframes: dict[str, DataFrame], output_path: Path) -> None:
         red_bars = ax.bar(
             panel_data["year"],
             panel_data["no_dl"],
-            bottom=panel_data["dl_using"],
+            # bottom=panel_data["dl_using"],
             color="#C44E52",
             label=NO_DL_LABEL,
         )
@@ -210,7 +237,7 @@ def plot(field_dataframes: dict[str, DataFrame], output_path: Path) -> None:
         else:
             ax.set_xlabel("Year", fontsize=XY_LABEL_FONT_SIZE)
 
-        years: list[int] = list(range(2012, 2027, 2))
+        years: list[int] = list(range(2012, 2026, 2))
         ax.set_xticks(years)
         ax.set_xticklabels([str(year) for year in years])
 
@@ -257,7 +284,7 @@ def plot(field_dataframes: dict[str, DataFrame], output_path: Path) -> None:
     fig.text(
         0.5,
         0.955,
-        "6,962 Papers Analyzed; 4,662 Papers Using Deep Learning",
+        f"{uses_dl_count + no_dl_count:,} Papers Analyzed; {uses_dl_count:,} Papers Using Deep Learning",
         ha="center",
         va="top",
         fontsize=TITLE_FONT_SIZE,
@@ -287,7 +314,14 @@ def main(db_path: Path) -> None:
     for field, field_df in field_dataframes.items():
         print(field, field_df["dl_using"].sum())
 
-    plot(field_dataframes=field_dataframes, output_path=Path("figR_1.pdf").absolute())
+    uses_dl_count, no_dl_count = count_papers(df=papers)
+
+    plot(
+        field_dataframes=field_dataframes,
+        uses_dl_count=uses_dl_count,
+        no_dl_count=no_dl_count,
+        output_path=Path("figR.pdf").absolute(),
+    )
 
 
 if __name__ == "__main__":

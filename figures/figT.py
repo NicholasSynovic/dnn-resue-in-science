@@ -15,6 +15,7 @@ TITLE_FONT_SIZE: int = 22
 XY_LABEL_FONT_SIZE: int = 20
 XY_TICK_FONT_SIZE: int = 18
 OTHER_FONT_SIZE: int = XY_TICK_FONT_SIZE
+FIGSIZE: tuple[float, float] = (12.8, 9.6)
 
 
 def plot(df: DataFrame, output_path: Path) -> None:
@@ -70,9 +71,9 @@ def plot(df: DataFrame, output_path: Path) -> None:
         classification: int(pivot[classification].sum())
         for classification in classifications
     }
-    ymax = int(pivot[classifications].sum(axis=1).max())
+    ymax = 300
 
-    fig, ax = plt.subplots(figsize=(14, 8))
+    fig, ax = plt.subplots(figsize=FIGSIZE)
 
     colors = {
         "Adaptation Reuse": "#4C78A8",
@@ -80,26 +81,50 @@ def plot(df: DataFrame, output_path: Path) -> None:
         "Deployment Reuse": "#C44E52",
     }
 
-    bottom = pd.Series(0, index=pivot.index)
-    for classification in classifications:
-        ax.bar(
-            pivot["publication_year"],
-            pivot[classification],
-            bottom=bottom,
-            color=colors[classification],
-            label=classification,
-        )
-        bottom = bottom + pivot[classification]
+    ax.bar(
+        pivot["publication_year"],
+        pivot["Adaptation Reuse"],
+        # bottom=bottom,
+        color=colors["Adaptation Reuse"],
+        label="Adaptation Reuse",
+    )
+
+    ax.bar(
+        pivot["publication_year"],
+        pivot["Deployment Reuse"],
+        # bottom=bottom,
+        color=colors["Deployment Reuse"],
+        label="Deployment Reuse",
+    )
+
+    ax.bar(
+        pivot["publication_year"],
+        pivot["Conceptual Reuse"],
+        # bottom=bottom,
+        color=colors["Conceptual Reuse"],
+        label="Conceptual Reuse",
+    )
 
     ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.set_xlabel("Year", fontsize=XY_LABEL_FONT_SIZE)
     ax.set_ylabel("Count", fontsize=XY_LABEL_FONT_SIZE)
-    ax.set_title(
+    fig.text(
+        0.5,
+        0.975,
         "PTM Reuse Pattern Counts per Year",
         fontsize=TITLE_FONT_SIZE,
-        pad=12,
+        ha="center",
+        va="top",
     )
-    ax.set_ylim(0, max(ymax * 1.3, 1))
+    fig.text(
+        0.5,
+        0.945,
+        f"{totals['Adaptation Reuse']:,} Adaptation Reuse; {totals['Conceptual Reuse']:,} Conceptual Reuse; {totals['Deployment Reuse']:,} Deployment Reuse",
+        fontsize=TITLE_FONT_SIZE,
+        ha="center",
+        va="top",
+    )
+    ax.set_ylim(0, max(ymax, 1))
     ax.tick_params(axis="both", labelsize=XY_TICK_FONT_SIZE)
     ax.tick_params(axis="x", rotation=45)
 
@@ -118,17 +143,7 @@ def plot(df: DataFrame, output_path: Path) -> None:
         fontsize=OTHER_FONT_SIZE,
         title="",
     )
-
-    fig.text(
-        0.5,
-        0.955,
-        f"{totals['Adaptation Reuse']:,} Adaptation Reuse; {totals['Conceptual Reuse']:,} Conceptual Reuse; {totals['Deployment Reuse']:,} Deployment Reuse",
-        ha="center",
-        va="top",
-        fontsize=TITLE_FONT_SIZE,
-    )
-
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.tight_layout(rect=(0, 0, 1, 0.9))
     fig.savefig(output_path)
     plt.close(fig)
 
@@ -203,7 +218,7 @@ FROM
     df = df.dropna(subset=["publication_year"]).copy()
     df["publication_year"] = df["publication_year"].astype(int)
 
-    return df.sort_values(by="publication_year")
+    return df[df["publication_year"] < 2026].sort_values(by="publication_year")
 
 
 @click.command()
