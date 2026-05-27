@@ -127,34 +127,32 @@ class OpenAIBatchBackend(Backend):
         self.logger.info("Wrote %d batch shard(s)", len(input_filenames))
 
         with Bar("Uploading batch input files...", max=len(input_filenames)) as bar:
+            fn: str
             for fn in input_filenames:
                 self.logger.info("Batch shard: %s", fn)
+                with open(fn, "rb") as f:
+                    self.openai_client.files.create(
+                        file=f,
+                        purpose="batch",
+                    )
+                bar.next()
+                continue
 
-                fn: str
-                for fn in input_filenames:
-                    with open(fn, "rb") as f:
-                        self.openai_client.files.create(
-                            file=f,
-                            purpose="batch",
-                        )
-                    bar.next()
-                    continue
+            # # Create batch job
+            # self.logger.info("Creating batch job...")
 
-                # # Create batch job
-                # self.logger.info("Creating batch job...")
+            # batch = self.openai_client.batches.create(
+            #     input_file_id=input_file.id,
+            #     endpoint="/v1/responses",
+            #     completion_window="24h",
+            # )
 
-                # batch = self.openai_client.batches.create(
-                #     input_file_id=input_file.id,
-                #     endpoint="/v1/responses",
-                #     completion_window="24h",
-                # )
+            # self.logger.info(
+            #     "Batch created: %s",
+            #     batch.id,
+            # )
 
-                # self.logger.info(
-                #     "Batch created: %s",
-                #     batch.id,
-                # )
-
-                # bar.next()
+            # bar.next()
 
         return [
             ModelResponse(

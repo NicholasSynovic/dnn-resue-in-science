@@ -215,11 +215,10 @@ Use this as a guide, but identify any PTM mentioned in the paper even if it does
 The scientific method is made up of several steps. These include:
 
 - "Observation": The first involves making an identification of a phenomenon in the natural world,
-- "Background": The second requires conducting a background review and identifying relevant previous works,
-- "Hypothesis": The third involves creating a testable explanation,
-- "Test": The fourth step is to experiment and challenge the hypothesis,
-- "Analysis": The fifth step reviews the data generated from the test and iterates upon challenging the hypothesis, and
-- "Conclusion": The sixth step is reporting the results of the experiment and if the results support or reject your hypothesis""",  # noqa: E501
+- "Hypothesis": The second involves creating a testable explanation,
+- "Background": The third requires conducting a background review and identifying relevant previous works,
+- "Test": The fourth step is to experiment and challenge the hypothesis, and
+- "Analysis": The fifth step reviews the data generated from the test and iterates upon challenging the hypothesis.""",  # noqa: E501
     objective="""Your task is to output only an array of JSON objects containing key-value pairs, where:
 
 - The key "model" value is a string of the pre-trained deep learning model's name as stated in the prose,
