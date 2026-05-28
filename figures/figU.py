@@ -23,7 +23,7 @@ SCIENTIFIC_WORKFLOW_STEPS: list[str] = [
     "Analysis",
 ]
 TOP_N: int = 5
-FIGSIZE: tuple[float, float] = (25.6, 4.8)
+FIGSIZE: tuple[float, float] = (32.0, 5.5)
 
 
 def extract_steps(obj: Any) -> list[str]:
@@ -143,6 +143,7 @@ def plot_counts(counts: DataFrame, output_path: Path) -> None:
         ax.set_ylabel("Papers", fontsize=XY_LABEL_FONT_SIZE)
         ax.set_xticks(range(0, len(year_order), 2))
         ax.set_xticklabels(year_order[::2])
+        ax.margins(x=0.05)
         ax.tick_params(axis="both", labelsize=XY_TICK_FONT_SIZE)
         ax.tick_params(axis="x", rotation=45)
 
