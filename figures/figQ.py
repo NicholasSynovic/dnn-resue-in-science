@@ -185,7 +185,7 @@ def plot(df: DataFrame, output_path: Path) -> None:
     plt.ylabel("Paper Count", fontsize=XY_LABEL_FONT_SIZE)
     plt.yticks(fontsize=XY_TICK_FONT_SIZE)
     plt.xticks(fontsize=XY_TICK_FONT_SIZE)
-    plt.legend(title="", fontsize=18)
+    plt.legend(title="", fontsize=OTHER_FONT_SIZE)
 
     # ---- ADD VALUE LABELS ----
     for container in ax.containers:
