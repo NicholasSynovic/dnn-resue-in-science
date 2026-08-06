@@ -1,6 +1,5 @@
-from json import loads
+from json import JSONDecodeError, loads
 from pathlib import Path
-from textwrap import fill
 from typing import Any
 
 import click
@@ -17,7 +16,7 @@ XY_TICK_FONT_SIZE: int = 18
 OTHER_FONT_SIZE: int = XY_TICK_FONT_SIZE
 DL_LABEL: str = "PTM Reuse"
 NO_DL_LABEL: str = "No PTM Reuse"
-FIGSIZE: tuple[float, float] = (12.8, 9.6)
+FIGSIZE: tuple[float, float] = (12.8, 6.4)
 
 
 def load_dl_rows(db: Engine) -> DataFrame:
@@ -48,7 +47,7 @@ def parse_json(value: str) -> dict[str, Any] | list[Any] | None:
 
     try:
         parsed: Any = loads(value)
-    except Exception:
+    except (JSONDecodeError, TypeError, ValueError):
         return None
 
     if isinstance(parsed, dict | list):
@@ -134,41 +133,61 @@ def plot_counts(df: DataFrame, output_path: Path) -> None:
     if pivot.empty:
         raise ValueError("No years with DL papers available for plotting.")
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=FIGSIZE)
     zero_counts = pd.Series(0, index=pivot.index)
     blue_counts = pivot.get(DL_LABEL, zero_counts)
     red_counts = pivot.get(NO_DL_LABEL, zero_counts)
 
-    red_bars = ax.bar(
-        pivot["publication_year"],
-        red_counts,
-        color="#C44E52",
-        label=NO_DL_LABEL,
-    )
-    blue_bars = ax.bar(
+    # True stacking: bar height is the real per-year total, not max(reuse, no-reuse).
+    ax.bar(
         pivot["publication_year"],
         blue_counts,
         color="#4C78A8",
         label=DL_LABEL,
     )
-
-    print(df)
+    ax.bar(
+        pivot["publication_year"],
+        red_counts,
+        bottom=blue_counts,
+        color="#C44E52",
+        label=NO_DL_LABEL,
+    )
 
     ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.set_xlabel("Year", fontsize=XY_LABEL_FONT_SIZE)
     ax.set_ylabel("Count", fontsize=XY_LABEL_FONT_SIZE)
-    plt.suptitle("Papers Reusing PTMs per Year", fontsize=SUPTITLE_FONT_SIZE)
-    plt.title(
-        label=f"{df[df['category'] == 'PTM Reuse']['count'].sum():,} Reuse PTMs; {df[df['category'] == 'No PTM Reuse']['count'].sum():,} No PTM Reuse;",
-        fontsize=TITLE_FONT_SIZE,
-        loc="center",
+
+    # Stacked above the axes, top to bottom: title, subtitle, legend.
+    ax.set_title(
+        "Papers Reusing PTMs per Year",
+        fontsize=SUPTITLE_FONT_SIZE,
+        pad=76,
     )
+    reuse_total: int = int(df.loc[df["category"] == DL_LABEL, "count"].sum())
+    no_reuse_total: int = int(df.loc[df["category"] == NO_DL_LABEL, "count"].sum())
+    ax.text(
+        0.5,
+        1.145,
+        f"Candidate Papers: {reuse_total + no_reuse_total:,} | "
+        f"Reuse PTMs: {reuse_total:,}",
+        transform=ax.transAxes,
+        fontsize=TITLE_FONT_SIZE,
+        ha="center",
+        va="bottom",
+    )
+
     xticks: list[int] = years[::2]
     ax.set_xticks(xticks)
     ax.set_xticklabels([str(year) for year in xticks], rotation=45)
     ax.tick_params(axis="both", labelsize=XY_TICK_FONT_SIZE)
-    ax.legend(title="", fontsize=OTHER_FONT_SIZE)
-    ax.grid(False)
+    ax.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.005),
+        ncol=2,
+        frameon=False,
+        fontsize=OTHER_FONT_SIZE,
+    )
+    ax.grid(visible=False)
     ax.set_axisbelow(True)
 
     fig.tight_layout()
@@ -180,7 +199,7 @@ def plot_counts(df: DataFrame, output_path: Path) -> None:
 @click.option(
     "--db",
     "db_path",
-    default=Path("../data/aius_12-17-2025.db").absolute(),
+    default=Path("../data/aius.3-18-2026.db").absolute(),
     type=click.Path(path_type=Path),
     show_default=True,
     help="Path to the SQLite database.",
@@ -204,6 +223,8 @@ def main(db_path: Path, output_path: Path) -> None:
     counts: DataFrame = create_paper_usage_counts(df=dl_df)
 
     plot_counts(df=counts, output_path=output_path)
+
+    print(counts.groupby("category")["count"].sum().to_string())
 
 
 if __name__ == "__main__":
