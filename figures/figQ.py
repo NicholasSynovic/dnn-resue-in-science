@@ -2,8 +2,8 @@ from pathlib import Path
 
 import click
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-import seaborn as sns
 from matplotlib.ticker import FuncFormatter
 from pandas import DataFrame, Series
 from sqlalchemy import Engine, create_engine
@@ -13,7 +13,42 @@ TITLE_FONT_SIZE: int = 22
 XY_LABEL_FONT_SIZE: int = 20
 XY_TICK_FONT_SIZE: int = 18
 OTHER_FONT_SIZE: int = 18
-FIGSIZE: tuple[float, float] = (12.8, 9.6)
+BAR_LABEL_FONT_SIZE: int = 11
+FIGSIZE: tuple[float, float] = (12.8, 8.4)
+
+# Megajournals ordered by descending total paper count. The keys are the values
+# stored in `articles.megajournal`; the labels are what gets drawn on the axis.
+JOURNAL_KEYS: list[str] = ["PLOS", "FrontiersIn", "BMJ", "F1000"]
+JOURNAL_LABELS: list[str] = ["PLOS", "Frontiers", "BMJ", "F1000"]
+
+# Internal (wide-DataFrame) column names, in funnel order.
+CATEGORIES: list[str] = [
+    "Total Papers",
+    "OpenAlex Indexed Papers",
+    "Papers With Citations",
+    "Natural Science Papers",
+    "JATS XML Documents",
+]
+
+# Abbreviated names used in the legend.
+CATEGORY_LABELS: dict[str, str] = {
+    "Total Papers": "Total",
+    "OpenAlex Indexed Papers": "OpenAlex",
+    "Papers With Citations": "Cited",
+    "Natural Science Papers": "Natural science",
+    "JATS XML Documents": "JATS XML",
+}
+
+CATEGORY_COLORS: dict[str, str] = {
+    "Total Papers": "#4C78A8",
+    "OpenAlex Indexed Papers": "#F58518",
+    "Papers With Citations": "#54A24B",
+    "Natural Science Papers": "#C44E52",
+    "JATS XML Documents": "#8C6D31",
+}
+
+BAR_HEIGHT: float = 0.16
+GROUP_PITCH: float = 1.0
 
 
 def get_papers_per_journal(db: Engine) -> DataFrame:
@@ -36,9 +71,10 @@ FROM
 """
     doi_year_df: DataFrame = pd.read_sql_query(sql=doi_year_sql, con=db)
 
-    merged_df = pd.merge(all_papers_df, doi_year_df, on="doi", how="left")
-
-    merged_df["publication_year"] = merged_df["publication_year"].fillna(0).astype(int)
+    merged_df: DataFrame = pd.merge(all_papers_df, doi_year_df, on="doi", how="left")
+    merged_df = merged_df.assign(
+        publication_year=merged_df["publication_year"].fillna(0).astype(int)
+    )
 
     return merged_df[merged_df["publication_year"] < 2026]
 
@@ -84,13 +120,13 @@ SELECT DISTINCT
 FROM
     articles a
 JOIN
-    openalex oa
-ON
-    oa.doi = ns.doi
-JOIN
     natural_science_article_dois ns
 ON
     ns.doi == a.doi
+JOIN
+    openalex oa
+ON
+    oa.doi = ns.doi
 WHERE
     CAST(json_extract(oa.json_data, '$.publication_year') AS INTEGER) < 2026;
 """
@@ -121,91 +157,95 @@ WHERE
 def create_data(
     df1: DataFrame, df2: DataFrame, df3: DataFrame, df4: DataFrame, df5: DataFrame
 ) -> DataFrame:
-    data: dict[str, list[str | int]] = {
-        "journal": ["BMJ", "F1000", "FrontiersIn", "PLOS"],
-        "Total Papers": [],
-        "OpenAlex Indexed Papers": [],
-        "Papers With Citations": [],
-        "Natural Science Papers": [],
-        "JATS XML Documents": [],
-    }
+    # Journals absent from a category count as 0 rather than raising.
+    frames: dict[str, DataFrame] = dict(
+        zip(CATEGORIES, [df1, df2, df3, df4, df5], strict=True)
+    )
 
-    def _run(key: str, df: DataFrame) -> None:
-        counts: Series = df["megajournal"].value_counts()
-        data[key].append(counts["BMJ"])
-        data[key].append(counts["F1000"])
-        data[key].append(counts["FrontiersIn"])
-        data[key].append(counts["PLOS"])
+    def _counts(df: DataFrame) -> Series:
+        return (
+            df["megajournal"]
+            .value_counts()
+            .reindex(JOURNAL_KEYS, fill_value=0)
+            .astype(int)
+        )
 
-    _run("Total Papers", df1)
-    _run("OpenAlex Indexed Papers", df2)
-    _run("Papers With Citations", df3)
-    _run("Natural Science Papers", df4)
-    _run("JATS XML Documents", df5)
+    data: dict[str, list[str] | Series] = {"journal": JOURNAL_KEYS}
+    data.update({key: _counts(df).to_list() for key, df in frames.items()})
 
     return DataFrame(data=data)
 
 
 def plot(df: DataFrame, output_path: Path) -> None:
-    # Convert wide → long format
-    df_long = df.melt(
-        id_vars="journal",
-        value_vars=[
-            "Total Papers",
-            "OpenAlex Indexed Papers",
-            "Papers With Citations",
-            "Natural Science Papers",
-            "JATS XML Documents",
-        ],
-        var_name="category",
-        value_name="count",
-    )
+    # Draw a horizontal grouped bar chart of paper counts per megajournal.
+    fig, ax = plt.subplots(figsize=FIGSIZE)
 
-    # Plot grouped bar chart
-    plt.figure(figsize=FIGSIZE)
-    ax = sns.barplot(
-        data=df_long,
-        x="journal",
-        y="count",
-        hue="category",
-        # log_scale=True,
-    )
+    # Centre each journal's group of five bars on its tick.
+    centers = np.arange(len(JOURNAL_KEYS)) * GROUP_PITCH
+    offsets = (np.arange(len(CATEGORIES)) - (len(CATEGORIES) - 1) / 2) * BAR_HEIGHT
 
-    # ---- Y-AXIS: commas + headroom ----
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
-    ax.set_ylim(0, df_long["count"].max() * 1.15)  # 15% headroom
+    for category, offset in zip(CATEGORIES, offsets, strict=True):
+        ax.barh(
+            centers + offset,
+            df[category],
+            height=BAR_HEIGHT,
+            color=CATEGORY_COLORS[category],
+            label=CATEGORY_LABELS[category],
+        )
 
-    plt.suptitle("Paper Counts by Megajournal", fontsize=SUPTITLE_FONT_SIZE)
-    plt.title(
-        label=f"{df['Total Papers'].sum():,} Total Papers; {df['JATS XML Documents'].sum():,} Candidate Papers",
+    # Bars are drawn bottom-up; invert so PLOS sits at the top and each group
+    # reads Total -> JATS XML downward, matching the funnel.
+    ax.invert_yaxis()
+
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.set_xlim(0, df[CATEGORIES].to_numpy().max() * 1.08)
+    ax.set_yticks(centers)
+    ax.set_yticklabels(JOURNAL_LABELS)
+    ax.set_xlabel("Paper Count", fontsize=XY_LABEL_FONT_SIZE)
+    ax.set_ylabel("Megajournal", fontsize=XY_LABEL_FONT_SIZE)
+    ax.tick_params(axis="both", labelsize=XY_TICK_FONT_SIZE)
+    ax.grid(visible=False)
+
+    # Title sits directly above the subtitle; the legend goes below the axes.
+    ax.set_title("Paper Counts by Megajournal", fontsize=SUPTITLE_FONT_SIZE, pad=36)
+    total: int = int(df["Total Papers"].sum())
+    candidates: int = int(df["JATS XML Documents"].sum())
+    ax.text(
+        0.5,
+        1.015,
+        f"Total papers: {total:,} | Candidate papers: {candidates:,}",
+        transform=ax.transAxes,
         fontsize=TITLE_FONT_SIZE,
-        loc="center",
+        ha="center",
+        va="bottom",
     )
-    plt.xlabel("Megajournal", fontsize=XY_LABEL_FONT_SIZE)
-    plt.ylabel("Paper Count", fontsize=XY_LABEL_FONT_SIZE)
-    plt.yticks(fontsize=XY_TICK_FONT_SIZE)
-    plt.xticks(fontsize=XY_TICK_FONT_SIZE)
-    plt.legend(title="", fontsize=OTHER_FONT_SIZE)
 
-    # ---- ADD VALUE LABELS ----
     for container in ax.containers:
         ax.bar_label(
             container,
             fmt="{:,.0f}",
             padding=3,
-            fontsize=OTHER_FONT_SIZE,
-            rotation=60,
+            fontsize=BAR_LABEL_FONT_SIZE,
         )
 
-    plt.tight_layout()
-    plt.savefig(output_path)
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.14),
+        ncol=3,
+        frameon=False,
+        fontsize=OTHER_FONT_SIZE,
+    )
+
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
 
 
 @click.command()
 @click.option(
     "--db",
     "db_path",
-    default=Path("../data/aius.3-18-2026.db").resolve(),
+    default=Path("../data/aius.3-18-2026.db").absolute(),
     type=click.Path(path_type=Path),
     show_default=True,
     help="Path to the SQLite database.",
@@ -239,7 +279,9 @@ def main(db_path: Path, output_path: Path) -> None:
 
     plot(df=df, output_path=output_path)
 
-    print(df.sum())
+    print(df.set_index("journal")[CATEGORIES].to_string())
+    print()
+    print(df[CATEGORIES].sum().to_string())
 
 
 if __name__ == "__main__":
