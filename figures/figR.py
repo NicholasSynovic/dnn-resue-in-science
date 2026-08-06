@@ -1,13 +1,10 @@
-from json import loads
+from json import JSONDecodeError, loads
 from pathlib import Path
-from textwrap import fill
 from typing import Any
 
 import click
 import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib.container import BarContainer
-from matplotlib.patches import Patch
 from matplotlib.ticker import FuncFormatter
 from pandas import DataFrame
 from sqlalchemy import Engine, create_engine
@@ -30,7 +27,30 @@ XY_TICK_FONT_SIZE: int = 18
 OTHER_FONT_SIZE: int = XY_TICK_FONT_SIZE
 DL_LABEL: str = "DL Usage"
 NO_DL_LABEL: str = "No DL Usage"
-FIGSIZE: tuple[float, float] = (24, 10)
+FIGSIZE: tuple[float, float] = (12.8, 8.4)
+
+FIRST_YEAR: int = 2012
+LAST_YEAR: int = 2025
+
+# Figure-fraction height reserved below the axes for the legend, and the
+# height at which the legend's top edge is anchored. The anchor sits above the
+# reserved strip so the legend tucks into tight_layout's padding, keeping it
+# close to the x-axis label.
+LEGEND_RECT_BOTTOM: float = 0.20
+LEGEND_TOP: float = 0.225
+
+# Okabe-Ito colourblind-safe palette, assigned in descending-total order. The
+# weak yellow sits mid-rank rather than on one of the low-lying lines.
+FIELD_COLORS: list[str] = [
+    "#0072B2",
+    "#D55E00",
+    "#009E73",
+    "#CC79A7",
+    "#E69F00",
+    "#56B4E9",
+    "#8C6D31",
+    "#000000",
+]
 
 
 def load_papers(db: Engine) -> DataFrame:
@@ -47,7 +67,11 @@ FROM
 JOIN
     openalex oa
 ON
-    oa.doi = udl.doi;
+    oa.doi = udl.doi
+INNER JOIN
+    natural_science_article_dois ns
+ON
+    ns.doi = udl.doi;
 """
     df: DataFrame = pd.read_sql(sql=sql, con=db)
 
@@ -60,7 +84,7 @@ def parse_json(value: str) -> dict[str, Any] | list[Any] | None:
 
     try:
         parsed: Any = loads(value)
-    except Exception:
+    except (JSONDecodeError, TypeError, ValueError):
         return None
 
     if isinstance(parsed, dict | list):
@@ -94,18 +118,22 @@ def create_field_dataframes(df: DataFrame) -> dict[str, DataFrame]:
         else:
             continue
 
-        topics: list[str] = [
+        year: int = int(row["publication_year"])
+        if year < FIRST_YEAR:
+            continue
+
+        # A set, so a paper repeating the same topic across topic_0/1/2 counts
+        # once for that field. Papers spanning different fields still count in
+        # each of them.
+        topics: set[str] = {
             str(row["topic_0"]),
             str(row["topic_1"]),
             str(row["topic_2"]),
-        ]
+        }
 
         for topic in topics:
-            if int(row["publication_year"]) < 2012:
-                continue
-
             if topic in FIELD:
-                data["year"].append(int(row["publication_year"]))
+                data["year"].append(year)
                 data["field"].append(topic)
                 data["dl_using"].append(dl_using)
                 data["no_dl"].append(no_dl)
@@ -156,7 +184,7 @@ def count_papers(df: DataFrame) -> tuple[int, int]:
         result = parsed_response.get("result")
         if result is True:
             uses_dl += 1
-        else:
+        elif result is False:
             no_dl += 1
 
     return (uses_dl, no_dl)
@@ -164,133 +192,77 @@ def count_papers(df: DataFrame) -> tuple[int, int]:
 
 def plot(
     field_dataframes: dict[str, DataFrame],
-    uses_dl_count: int,
-    no_dl_count: int,
     output_path: Path,
 ) -> None:
-    panel_labels: list[str] = [
-        "(A)",
-        "(B)",
-        "(C)",
-        "(D)",
-        "(E)",
-        "(F)",
-        "(G)",
-        "(H)",
-    ]
-
+    # One line per field, ordered by descending total so the legend order
+    # matches how the lines stack at the right-hand edge.
     totals: dict[str, int] = {
         field: int(df["dl_using"].sum()) for field, df in field_dataframes.items()
     }
-
-    ordered_fields = [
+    ordered_fields: list[str] = [
         field
         for field, _ in sorted(totals.items(), key=lambda item: (-item[1], item[0]))
     ]
 
-    fig, axes = plt.subplots(nrows=2, ncols=4, figsize=FIGSIZE, sharey="row")
-    flat_axes = axes.flatten()
-    top_row_fields = ordered_fields[:4]
-    bottom_row_fields = ordered_fields[4:]
-    top_row_max = max(
-        (
-            field_dataframes[field][["dl_using", "no_dl"]].sum(axis=1).max()
-            for field in top_row_fields
-        ),
-        default=0,
-    )
-    bottom_row_max = max(
-        (
-            field_dataframes[field][["dl_using", "no_dl"]].sum(axis=1).max()
-            for field in bottom_row_fields
-        ),
-        default=0,
-    )
-    row_max = [top_row_max, bottom_row_max]
+    fig, ax = plt.subplots(figsize=FIGSIZE)
 
-    for index, field in enumerate(ordered_fields):
-        ax = flat_axes[index]
-        panel_data: DataFrame = field_dataframes[field]
-        wrapped_title = fill(field, width=30) if len(field) > 30 else field
-
-        blue_bars = ax.bar(
-            panel_data["year"],
-            panel_data["dl_using"],
-            color="#4C78A8",
-            label=DL_LABEL,
-        )
-        red_bars = ax.bar(
-            panel_data["year"],
-            panel_data["no_dl"],
-            # bottom=panel_data["dl_using"],
-            color="#C44E52",
-            label=NO_DL_LABEL,
+    for field, color in zip(ordered_fields, FIELD_COLORS, strict=True):
+        field_df: DataFrame = field_dataframes[field]
+        ax.plot(
+            field_df["year"],
+            field_df["dl_using"],
+            marker="o",
+            markersize=4,
+            linewidth=2,
+            color=color,
+            label=field,
         )
 
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
-        row_index = index // 4
-        ax.set_ylim(0, row_max[row_index] * 1.3 if row_max[row_index] else 1)
-        ax.set_title(wrapped_title, fontsize=TITLE_FONT_SIZE)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.set_xlim(FIRST_YEAR - 0.4, LAST_YEAR + 0.4)
+    ax.set_ylim(bottom=0)
+    xticks: list[int] = list(range(FIRST_YEAR, LAST_YEAR + 1, 2))
+    ax.set_xticks(xticks)
+    ax.set_xticklabels([str(year) for year in xticks])
+    ax.set_xlabel("Year", fontsize=XY_LABEL_FONT_SIZE)
+    ax.set_ylabel("Papers Using Deep Learning", fontsize=XY_LABEL_FONT_SIZE)
+    ax.tick_params(axis="both", labelsize=XY_TICK_FONT_SIZE)
+    ax.tick_params(axis="x", rotation=45)
+    ax.grid(visible=False)
+    ax.set_axisbelow(True)
 
-        if row_index == 0:
-            ax.set_xlabel("")
-        else:
-            ax.set_xlabel("Year", fontsize=XY_LABEL_FONT_SIZE)
-
-        years: list[int] = list(range(2012, 2026, 2))
-        ax.set_xticks(years)
-        ax.set_xticklabels([str(year) for year in years])
-
-        if index == 0 or index == 4:
-            ax.set_ylabel("Paper Count", fontsize=XY_LABEL_FONT_SIZE)
-
-        ax.tick_params(axis="both", labelsize=XY_TICK_FONT_SIZE)
-        ax.tick_params(axis="x", rotation=45)
-
-        # ax.bar_label(blue_bars, fmt="{:,.0f}", padding=3, fontsize=OTHER_FONT_SIZE)
-        # ax.bar_label(red_bars, fmt="{:,.0f}", padding=3, fontsize=OTHER_FONT_SIZE)
-
-        if ax.get_legend() is not None:
-            ax.get_legend().remove()
-
-        ax.text(
-            0.02,
-            0.98,
-            panel_labels[index],
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=TITLE_FONT_SIZE,
-            fontweight="bold",
-        )
-
-        if index == 0:
-            ax.legend(
-                handles=[
-                    Patch(color="#4C78A8", label=DL_LABEL),
-                    Patch(color="#C44E52", label=NO_DL_LABEL),
-                ],
-                loc="center left",
-                frameon=True,
-                fontsize=OTHER_FONT_SIZE,
-            )
-
-    fig.suptitle(
-        "Number Of Papers Using Deep Learning per Year",
+    ax.set_title(
+        "Deep Learning Usage Trends Across Scientific Fields",
         fontsize=SUPTITLE_FONT_SIZE,
-        y=0.99,
+        pad=12,
+    )
+    # ax.text(
+    #     0.5,
+    #     1.015,
+    #     "Number of papers using deep learning per year per natural science\n"
+    #     "field from 2012 to 2025. Papers may span multiple fields due to\n"
+    #     "OpenAlex field assignment.",
+    #     transform=ax.transAxes,
+    #     fontsize=OTHER_FONT_SIZE,
+    #     ha="center",
+    #     va="bottom",
+    # )
+
+    # A figure-level legend below the axes. Its top edge is anchored just under
+    # the reserved strip, so it sits close to the x-axis label instead of being
+    # pushed to the bottom of the figure.
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, LEGEND_TOP),
+        ncol=2,
+        frameon=False,
+        fontsize=OTHER_FONT_SIZE,
     )
 
-    fig.text(
-        0.5,
-        0.955,
-        f"{uses_dl_count + no_dl_count:,} Papers Analyzed; {uses_dl_count:,} Papers Using Deep Learning",
-        ha="center",
-        va="top",
-        fontsize=TITLE_FONT_SIZE,
-    )
-
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.tight_layout(rect=(0, LEGEND_RECT_BOTTOM, 1, 1))
     fig.savefig(output_path)
     plt.close(fig)
 
@@ -299,28 +271,37 @@ def plot(
 @click.option(
     "--db",
     "db_path",
-    default=Path("../data/aius_12-17-2025.db").absolute(),
+    default=Path("../data/aius.3-18-2026.db").absolute(),
     type=click.Path(path_type=Path),
     show_default=True,
     help="Path to the SQLite database.",
 )
-def main(db_path: Path) -> None:
+@click.option(
+    "--output",
+    "output_path",
+    default=Path("figR.pdf").absolute(),
+    type=click.Path(path_type=Path),
+    show_default=True,
+    help="Output path for the plot.",
+)
+def main(db_path: Path, output_path: Path) -> None:
     db_path = db_path.absolute()
+    output_path = output_path.absolute()
     db: Engine = create_engine(url=f"sqlite:///{db_path}")
 
     papers: DataFrame = load_papers(db=db)
     field_dataframes = create_field_dataframes(df=papers)
 
-    for field, field_df in field_dataframes.items():
-        print(field, field_df["dl_using"].sum())
-
     uses_dl_count, no_dl_count = count_papers(df=papers)
+    for field, field_df in field_dataframes.items():
+        using: int = field_df["dl_using"].sum()
+        print(field, using, (using / uses_dl_count) * 100)
+
+    print(f"{uses_dl_count:,} use DL; {no_dl_count:,} do not")
 
     plot(
         field_dataframes=field_dataframes,
-        uses_dl_count=uses_dl_count,
-        no_dl_count=no_dl_count,
-        output_path=Path("figR.pdf").absolute(),
+        output_path=output_path,
     )
 
 
