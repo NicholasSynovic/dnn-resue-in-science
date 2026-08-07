@@ -29,7 +29,7 @@ DL_LABEL: str = "PTM Reuse"
 NO_DL_LABEL: str = "No PTM Reuse"
 FIGSIZE: tuple[float, float] = (12.8, 8.4)
 
-FIRST_YEAR: int = 2012
+FIRST_YEAR: int = 2016
 LAST_YEAR: int = 2025
 
 # Figure-fraction height reserved below the axes for the legend, and the
@@ -233,7 +233,7 @@ def plot(
     ax.set_axisbelow(True)
 
     ax.set_title(
-        "PTM Reuse Trends Across Scientific Fields",
+        "Pre-Trained Model (PTM) Reuse per Year Across Scientific Fields",
         fontsize=SUPTITLE_FONT_SIZE,
         pad=12,
     )

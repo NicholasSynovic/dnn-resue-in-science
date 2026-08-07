@@ -13,7 +13,7 @@ TITLE_FONT_SIZE: int = 22
 XY_LABEL_FONT_SIZE: int = 20
 XY_TICK_FONT_SIZE: int = 18
 OTHER_FONT_SIZE: int = 18
-BAR_LABEL_FONT_SIZE: int = 11
+BAR_LABEL_FONT_SIZE: int = 15
 FIGSIZE: tuple[float, float] = (12.8, 8.4)
 
 # Megajournals ordered by descending total paper count. The keys are the values

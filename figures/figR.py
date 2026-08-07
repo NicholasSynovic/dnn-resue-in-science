@@ -232,7 +232,7 @@ def plot(
     ax.set_axisbelow(True)
 
     ax.set_title(
-        "Deep Learning Usage Trends Across Scientific Fields",
+        "Deep Learning Usage per Year Across Scientific Fields",
         fontsize=SUPTITLE_FONT_SIZE,
         pad=12,
     )

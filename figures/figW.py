@@ -155,11 +155,11 @@ def plot_counts(df: DataFrame, output_path: Path) -> None:
 
     ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.set_xlabel("Year", fontsize=XY_LABEL_FONT_SIZE)
-    ax.set_ylabel("Count", fontsize=XY_LABEL_FONT_SIZE)
+    ax.set_ylabel("Paper Count", fontsize=XY_LABEL_FONT_SIZE)
 
     # Stacked above the axes, top to bottom: title, subtitle, legend.
     ax.set_title(
-        "Papers Reusing PTMs per Year",
+        "Papers Reusing Pre-Trained Models (PTMs) per Year",
         fontsize=SUPTITLE_FONT_SIZE,
         pad=76,
     )
