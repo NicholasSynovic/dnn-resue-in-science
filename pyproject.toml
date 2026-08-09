@@ -35,7 +35,7 @@ dependencies = [
     "globus-sdk>=4.1.0",
     "openai>=2.6.1",
     "beautifulsoup4>=4.14.3",
-    "lxml>=6.0.2",
+    "lxml>=6.1.0",
     #     "fastparquet>=2024.11.0",
     "pyarrow>=24.0.0",
 ]
